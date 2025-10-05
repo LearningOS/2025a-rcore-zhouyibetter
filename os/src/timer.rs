@@ -27,8 +27,7 @@ pub fn get_time_ms() -> usize {
 #[allow(dead_code)]
 pub fn get_time_us() -> usize {
     let t = time::read();
-    // println!("[DEBUG] t(hex)={:#x}, t(dec)={}", t, t);
-    ((t as u128) * (MICRO_PER_SEC as u128) / (CLOCK_FREQ as u128)) as usize
+    t * MICRO_PER_SEC / CLOCK_FREQ
 }
 
 /// Set the next timer interrupt

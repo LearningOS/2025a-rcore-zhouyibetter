@@ -29,13 +29,11 @@ pub fn sys_yield() -> isize {
 pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     let us = get_time_us();
-    // println!("DBG: us(hex)={:#x}, us(dec)={}", us, us);
     unsafe {
         *ts = TimeVal {
             sec: us / 1_000_000,
             usec: us % 1_000_000,
         };
-        // println!("[DEBUG] ts.sec = {}, ts.usec = {}", (*ts).sec, (*ts).usec);
     }
     0
 }

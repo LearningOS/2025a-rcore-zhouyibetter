@@ -98,3 +98,43 @@ QEMU: Terminated
 ```
 
 ![alt text](image.png)
+
+```
+(base) ci-> make test CHAPTER=3
+...
+CCCCCCCCCC [4/5]
+AAAAAAAAAA [5/5]
+BBBBBBBBBB [4/5]
+CCCCCCCCCC [5/5]
+Test write A OK28459!
+BBBBBBBBBB [5/5]
+Test write C OK28459!
+Test write B OK28459!
+time_msec = 114 after sleeping 100 ticks, delta = 100ms!
+Test sleep1 passed28459!
+string from task trace test
+
+Test trace OK28459!
+Test sleep OK28459!
+[kernel] Panicked at src/task/mod.rs:136 All applications completed!
+make[1]: 离开目录“/home/eq/Projects/rust_all/2025a-rcore-zhouyibetter/os”
+python3 check/ch3.py < stdout-ch3 || (\
+        make restore ; \
+        exit 1 ; \
+)
+['get_time OK28459! (\\d+)', 'Test sleep OK28459!', 'current time_msec = (\\d+)', 'time_msec = (\\d+) after sleeping (\\d+) ticks, delta = (\\d+)ms!', 'Test sleep1 passed28459!', 'string from task trace test', 'Test trace OK28459!'] []
+[PASS] found <get_time OK28459! (\d+)>
+[PASS] found <Test sleep OK28459!>
+[PASS] found <current time_msec = (\d+)>
+[PASS] found <time_msec = (\d+) after sleeping (\d+) ticks, delta = (\d+)ms!>
+[PASS] found <Test sleep1 passed28459!>
+[PASS] found <string from task trace test>
+[PASS] found <Test trace OK28459!>
+
+Test passed28459: 7/7
+make restore
+make[1]: 进入目录“/home/eq/Projects/rust_all/2025a-rcore-zhouyibetter/ci-user”
+Restoring original files from temp-* dirs
+make[1]: 离开目录“/home/eq/Projects/rust_all/2025a-rcore-zhouyibetter/ci-user”
+Report for lab1 found.
+```
