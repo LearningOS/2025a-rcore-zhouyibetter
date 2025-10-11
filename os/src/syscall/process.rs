@@ -5,7 +5,7 @@ use crate::{
     mm::{translated_byte_buffer, PageTable},
     task::{
         change_program_brk, current_user_token, exit_current_and_run_next,
-        suspend_current_and_run_next,
+        suspend_current_and_run_next, TASK_MANAGER,
     },
     timer::get_time_us,
 };
@@ -82,9 +82,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
             buffers[0][0] = data as u8;
             0
         },
-        2 => {
-            0
-        },
+        2 => TASK_MANAGER.count_syscall(id) as isize,
         _ => -1,
     }
 }
