@@ -15,6 +15,7 @@ mod switch;
 mod task;
 
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::{MapPermission, PageTable, VirtAddr};
 use crate::sync::UPSafeCell;
 use crate::trap::TrapContext;
 use alloc::vec::Vec;
@@ -154,6 +155,66 @@ impl TaskManager {
         }
     }
 
+    /// ask for new memory
+    fn new_memory(&self, start: usize, len: usize, prot: usize) -> isize {
+        if start % crate::config::PAGE_SIZE != 0 {
+            // println!("[DEBUG] Err 1");
+            return -1;
+        }
+
+        if prot & !0x7 != 0 || prot & 0x7 == 0 {
+            // println!("[DEBUG] Err 2");
+            return -1;
+        }
+
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        // 检查[start, start + len) 中是否存在已经被映射的页
+        if inner.tasks[current].memory_set.check_is_overlap(start, len) {
+            println!("[DEBUG] already allocated");
+            return -1;
+        }
+
+        let mut perm = MapPermission::U;
+        if prot & 0x1 != 0 {
+            perm |= MapPermission::R;
+        }
+        if prot & 0x2 != 0 {
+            perm |= MapPermission::W;
+        }
+        if prot & 0x4 != 0 {
+            perm |= MapPermission::X;
+        }
+
+        println!("[DEBUG] new mem from {:#x} to {:#x}", start, start + len);
+        inner.tasks[current]
+            .memory_set
+            .insert_framed_area(start_va, end_va, perm);
+        0
+    }
+
+    /// free memory of range [start, start + len)
+    fn free_memory(&self, start: usize, len: usize) -> isize {
+        if start % crate::config::PAGE_SIZE != 0 {
+            // println!("[DEBUG] Err 1");
+            return -1;
+        }
+
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        // println!("[DEBUG] free mem from {:#x} to {:#x}", start, start + len);
+        inner.tasks[current]
+            .memory_set
+            .delete_framed_area(start_va, end_va)
+    }
+
     /// record the number of calling `id` syscall
     pub fn record_syscall(&self, id: usize) {
         let mut inner = self.inner.exclusive_access();
@@ -166,6 +227,61 @@ impl TaskManager {
         let inner = self.inner.exclusive_access();
         let current = inner.current_task;
         inner.tasks[current].syscall_counter[id]
+    }
+
+    /// trace read
+    fn trace_read(&self, id: usize) -> isize {
+        let va = VirtAddr::from(id);
+        let vpn = va.floor();
+
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        // 检查 id 是否是当前任务可以使用的地址
+        if !inner.tasks[current].memory_set.is_mapped(vpn) {
+            return -1;
+        }
+
+        // 读取 id 位置的一个字节的内容
+        let page_table = PageTable::from_token(inner.tasks[current].memory_set.token());
+        if let Some(pte) = page_table.translate(vpn) {
+            if !pte.is_valid() || !pte.readable() {
+                return -1;
+            }
+            let ppn = pte.ppn();
+            let byte_array = ppn.get_bytes_array();
+            byte_array[va.page_offset()] as isize
+        } else {
+            -1
+        }
+    }
+
+    /// trace write
+    fn trace_write(&self, id: usize, data: usize) -> isize {
+        let va = VirtAddr::from(id);
+        let vpn = va.floor();
+
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+
+        // 检查 id 是否是当前任务可以使用的地址
+        if !inner.tasks[current].memory_set.is_mapped(vpn) {
+            return -1;
+        }
+
+        // 读取 id 位置的一个字节的内容
+        let page_table = PageTable::from_token(inner.tasks[current].memory_set.token());
+        if let Some(pte) = page_table.translate(vpn) {
+            if !pte.is_valid() || !pte.writable() {
+                return -1;
+            }
+            let ppn = pte.ppn();
+            let byte_array = ppn.get_bytes_array();
+            byte_array[va.page_offset()] = data as u8;
+            0
+        } else {
+            -1
+        }
     }
 }
 
@@ -215,4 +331,26 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 /// Change the current 'Running' task's program break
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
+}
+
+/// current task ask for new memory
+pub fn new_memory(start: usize, len: usize, prot: usize) -> isize {
+    println!("[DEBUG] new mem");
+    TASK_MANAGER.new_memory(start, len, prot)
+}
+
+/// free current task's memory
+pub fn free_memory(start: usize, len: usize) -> isize {
+    println!("[DEBUG] free mem");
+    TASK_MANAGER.free_memory(start, len)
+}
+
+/// trace read
+pub fn trace_read(id: usize) -> isize {
+    TASK_MANAGER.trace_read(id)
+}
+
+/// trace read
+pub fn trace_write(id: usize, data: usize) -> isize {
+    TASK_MANAGER.trace_write(id, data)
 }

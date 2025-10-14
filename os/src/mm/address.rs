@@ -1,4 +1,6 @@
 //! Implementation of physical and virtual address and page number.
+use alloc::{format, string::String};
+
 use super::PageTableEntry;
 use crate::config::{PAGE_SIZE, PAGE_SIZE_BITS};
 use core::fmt::{self, Debug, Formatter};
@@ -165,6 +167,10 @@ impl VirtPageNum {
             vpn >>= 9;
         }
         idx
+    }
+    /// Change the vpn to hex for output
+    pub fn to_string(&self) -> String {
+        format!("{:#x}", self.0)
     }
 }
 

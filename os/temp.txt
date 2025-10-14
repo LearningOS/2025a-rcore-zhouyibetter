@@ -1,0 +1,14 @@
+[DEBUG] new mem
+[DEBUG] new mem from 0x10000 to 0x10001
+[DEBUG] existed mem area is from 0x0 to 0x3
+[DEBUG] existed mem area is from 0x3 to 0x4
+[DEBUG] existed mem area is from 0x4 to 0x9
+[DEBUG] existed mem area is from 0xa to 0xc
+[DEBUG] existed mem area is from 0xc to 0xc
+[DEBUG] existed mem area is from 0x7fffffe to 0x7ffffff
+[DEBUG] new mem from 0x10000000 to 0x10001000
+[DEBUG] free mem
+free range is from 0x10000 to 0x10002
+[DEBUG] free mem stamp 1
+[DEBUG] free mem
+Test 04_6 ummap2 OK!

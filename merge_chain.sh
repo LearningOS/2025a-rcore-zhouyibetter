@@ -325,7 +325,7 @@ for ((i=NEXT_BRANCH; i<=END_BRANCH; i++)); do
     fi
 
     echo "Merging ${PREV_BRANCH}..."
-    if ! git merge "${PREV_BRANCH}" -m "Merge ${PREV_BRANCH} to ${CUR_BRANCH}: ${ORIGIN_MSG}"; then
+    if ! git merge "${PREV_BRANCH}" --allow-unrelated-histories -m "Merge ${PREV_BRANCH} to ${CUR_BRANCH}: ${ORIGIN_MSG}"; then
         echo ""
         echo "❌ Conflict occurred in ${CUR_BRANCH}"
         echo "Please follow these steps to resolve:"
