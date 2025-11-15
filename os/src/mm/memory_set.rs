@@ -48,6 +48,27 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
+
+    /// check overlap of range [start, start + len]
+    pub fn check_is_overlap(&self, start: usize, len: usize) -> bool {
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+
+        println!(
+            "[DEBUG] new mem from {} to {}",
+            start_vpn.to_string(),
+            end_vpn.to_string()
+        );
+        for area in &self.areas {
+            if area.is_overlap(start_vpn, end_vpn) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// Assume that no conflicts.
     pub fn insert_framed_area(
         &mut self,
@@ -59,6 +80,64 @@ impl MemorySet {
             MapArea::new(start_va, end_va, MapType::Framed, permission),
             None,
         );
+    }
+    /// Assume that no conflicts.
+    pub fn delete_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+    ) -> isize {
+        let start_vpn = start_va.floor();
+        let end_vpn = end_va.ceil();
+        println!("free range is from {} to {}", start_vpn.to_string(), end_vpn.to_string());
+
+        // 需要验证self.area中的MapArea是否完整覆盖[start_vpn, end_va)
+        println!("[DEBUG] free mem stamp 1");
+        for vpn in VPNRange::new(start_vpn, end_vpn) {
+            if !self.is_mapped(vpn) {
+                return -1;
+            }
+        }
+
+        println!("[DEBUG] free mem stamp 2");
+        let mut i = 0;
+        while i < self.areas.len() {
+            let s = self.areas[i].vpn_range.get_start();
+            let e = self.areas[i].vpn_range.get_end();
+            println!("area range is from {} to {}", s.to_string(), e.to_string());
+
+            if e <= start_vpn || s >= end_vpn {
+                println!("[DEBUG] free mem stamp 2.1");
+                i += 1;
+                continue;
+            }
+
+            // 完全包围
+            if s >= start_vpn && e <= end_vpn  {
+                println!("[DEBUG] free mem stamp 2.2");
+                let mut area = self.areas.remove(i);
+                area.unmap(&mut self.page_table);
+            }
+
+            // 尾部
+            if s < start_vpn && e > start_vpn && e <= end_vpn {
+                println!("[DEBUG] free mem stamp 2.3");
+                self.areas[i].shrink_to(&mut self.page_table, start_vpn);
+            }
+
+            // 头部
+            if e > end_vpn && s >= start_vpn && s < end_vpn {
+                println!("[DEBUG] free mem stamp 2.4");
+                self.areas[i].shrink_from(&mut self.page_table, end_vpn);
+            }
+
+            i += 1; 
+        }
+        0
+    }
+    /// check vpn is mapped
+    pub fn is_mapped(&self, vpn: VirtPageNum) -> bool {
+        self.areas.iter().any(|area| area.vpn_range.get_start() <= vpn && vpn < area.vpn_range.get_end())
     }
     /// remove a area
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
@@ -325,6 +404,16 @@ impl MapArea {
             map_perm,
         }
     }
+    
+    /// check vpn_range overlap with range [start_vpn, end_vpn] wether or not
+    pub fn is_overlap(&self, start_vpn: VirtPageNum, end_vpn: VirtPageNum) -> bool{
+        println!("[DEBUG] existed mem area is from {} to {}", self.vpn_range.get_start().to_string(), self.vpn_range.get_end().to_string());
+        if self.vpn_range.get_start() >= end_vpn || self.vpn_range.get_end() <= start_vpn {
+            return false;
+        }
+        true
+    }
+
     pub fn from_another(another: &Self) -> Self {
         Self {
             vpn_range: VPNRange::new(another.vpn_range.get_start(), another.vpn_range.get_end()),
@@ -370,6 +459,13 @@ impl MapArea {
             self.unmap_one(page_table, vpn)
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
+    }
+    #[allow(unused)]
+    pub fn shrink_from(&mut self, page_table: &mut PageTable, new_start: VirtPageNum) {
+        for vpn in VPNRange::new(self.vpn_range.get_start(), new_start) {
+            self.unmap_one(page_table, vpn)
+        }
+        self.vpn_range = VPNRange::new(new_start, self.vpn_range.get_end());
     }
     #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {

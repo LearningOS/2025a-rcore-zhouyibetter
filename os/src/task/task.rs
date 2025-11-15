@@ -1,7 +1,7 @@
 //! Types related to task management & Functions for completely changing TCB
 use super::TaskContext;
 use super::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
-use crate::config::TRAP_CONTEXT_BASE;
+use crate::config::{PROGRAM_DEFAULT_PRIORITY, PROGRAM_DEFAULT_STRIDE, TRAP_CONTEXT_BASE};
 use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 use crate::sync::UPSafeCell;
 use crate::trap::{trap_handler, TrapContext};
@@ -68,6 +68,12 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    /// program stride
+    pub stride: usize,
+
+    /// Program priority
+    pub priority: isize,
 }
 
 impl TaskControlBlockInner {
@@ -118,6 +124,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    stride: PROGRAM_DEFAULT_STRIDE,
+                    priority: PROGRAM_DEFAULT_PRIORITY,
                 })
             },
         };
@@ -191,6 +199,8 @@ impl TaskControlBlock {
                     exit_code: 0,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    stride: PROGRAM_DEFAULT_STRIDE,
+                    priority: PROGRAM_DEFAULT_PRIORITY,
                 })
             },
         });
@@ -204,6 +214,59 @@ impl TaskControlBlock {
         task_control_block
         // **** release child PCB
         // ---- release parent PCB
+    }
+
+    /// spawn new task upgraded `fork + exce`
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Option<Arc<TaskControlBlock>> {
+        // 1. 从 ELF 创建新地址空间
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+            .unwrap()
+            .ppn();
+
+        // 2. 创建新的内核栈
+        let pid_handle = pid_alloc();
+        let kernel_stack = kstack_alloc();
+        let kernel_stack_top = kernel_stack.get_top();
+
+        // 3. 创建任务控制块
+        // ---- access parent PCB exclusively
+        let mut parent_inner = self.inner_exclusive_access();
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: user_sp,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: Some(Arc::downgrade(self)), // 设置父进程
+                    children: Vec::new(),
+                    exit_code: 0,
+                    heap_bottom: user_sp,
+                    program_brk: user_sp,
+                    stride: PROGRAM_DEFAULT_STRIDE,
+                    priority: PROGRAM_DEFAULT_PRIORITY,
+                })
+            },
+        });
+        // add child
+        parent_inner.children.push(task_control_block.clone());
+
+        // 4. 初始化 Trap 上下文
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+
+        Some(task_control_block)
     }
 
     /// get pid of process
@@ -235,6 +298,12 @@ impl TaskControlBlock {
         } else {
             None
         }
+    }
+
+    /// set the priority of program
+    pub fn set_priority(&self, prio: isize) {
+        let mut inner = self.inner.exclusive_access();
+        inner.priority = prio;
     }
 }
 

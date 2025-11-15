@@ -21,7 +21,11 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
-use crate::loader::get_app_data_by_name;
+use crate::{
+    loader::get_app_data_by_name,
+    mm::{MapPermission, VirtAddr},
+    task::processor::PROCESSOR,
+};
 use alloc::sync::Arc;
 use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
@@ -99,6 +103,74 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // we do not have to save task context
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);
+}
+
+/// alloc new memory for task
+pub fn new_memory(start: usize, len: usize, prot: usize) -> isize {
+    if start % crate::config::PAGE_SIZE != 0 {
+        // println!("[DEBUG] Err 1");
+        return -1;
+    }
+
+    if prot & !0x7 != 0 || prot & 0x7 == 0 {
+        // println!("[DEBUG] Err 2");
+        return -1;
+    }
+
+    let processor = PROCESSOR.exclusive_access();
+    if let Some(current_tcb) = processor.current() {
+        // 获取内部对象
+        let mut inner = current_tcb.inner_exclusive_access();
+        // 检查分配参数
+        if inner.memory_set.check_is_overlap(start, len) {
+            println!("[DEBUG] already allocated");
+            return -1;
+        }
+        // 分配内存
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        let mut perm = MapPermission::U;
+        if prot & 0x1 != 0 {
+            perm |= MapPermission::R;
+        }
+        if prot & 0x2 != 0 {
+            perm |= MapPermission::W;
+        }
+        if prot & 0x4 != 0 {
+            perm |= MapPermission::X;
+        }
+
+        println!("[DEBUG] new mem from {:#x} to {:#x}", start, start + len);
+        inner.memory_set.insert_framed_area(start_va, end_va, perm);
+    } else {
+        println!("[Debug] can not get current task control block");
+        return -1;
+    }
+
+    0
+}
+
+/// free memory for current process
+pub fn free_memory(start: usize, len: usize) -> isize {
+    if start % crate::config::PAGE_SIZE != 0 {
+        // println!("[DEBUG] Err 1");
+        return -1;
+    }
+
+    let processor = PROCESSOR.exclusive_access();
+    if let Some(current_tcb) = processor.current() {
+        // 获取内部对象
+        let mut inner = current_tcb.inner_exclusive_access();
+
+        let start_va = VirtAddr::from(start);
+        let end_va = VirtAddr::from(start + len);
+
+        inner.memory_set.delete_framed_area(start_va, end_va)
+    } else {
+        println!("[Debug] can not get current task control block");
+        return -1;
+    }
 }
 
 lazy_static! {
